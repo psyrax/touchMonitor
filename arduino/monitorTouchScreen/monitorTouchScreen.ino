@@ -36,10 +36,26 @@ Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
 
+//Serial Vars
+// vars for serial input
+String inputString = "";
+boolean stringComplete = false;
+int lite = 11;
+int reset = 13;
+
+
 void setup(void) {
 
+	pinMode(lite, OUTPUT);
+	pinMode(reset, OUTPUT);
+	digitalWrite(reset, LOW);
+	delay(1000);
 	Serial.begin(9600);
 
+
+	//Reserve buffer for serial
+  	inputString.reserve(200);
+	
 	tft.begin();
 	tft.fillScreen(ILI9341_BLACK);
 
@@ -48,40 +64,134 @@ void setup(void) {
 		Serial.println("failed!");
 	};
 	Serial.println("OK!");
-    
+    Serial.println(digitalRead(reset));
 	tft.setRotation(3);
 	
 	//tft.drawRect(0, 0, 79, 119, ILI9341_DARKGREEN);
 	tft.setCursor(10, 10);
-  	tft.setTextColor(ILI9341_DARKGREEN);  tft.setTextSize(3);
+  	tft.setTextColor(ILI9341_DARKGREEN);  
+  	tft.setTextSize(3);
   	tft.println("CPU");
 
   	//tft.drawRect(80, 0, 79, 119, ILI9341_ORANGE);
   	tft.setCursor(90, 10);
-  	tft.setTextColor(ILI9341_ORANGE);  tft.setTextSize(3);
-  	tft.println("RAM");
+  	tft.setTextColor(ILI9341_ORANGE);
+  	tft.setTextSize(3);
+  	tft.println("GPU");
 
   	//tft.drawRect(160, 0, 79, 119, ILI9341_DARKCYAN);
   	tft.setCursor(170, 10);
-  	tft.setTextColor(ILI9341_DARKCYAN);  tft.setTextSize(3);
-  	tft.println("GPU");
+  	tft.setTextColor(ILI9341_DARKCYAN);
+  	tft.setTextSize(3);
+  	tft.println("RAM");
 
+  	tft.setTextSize(1);
+  	tft.setTextColor(ILI9341_WHITE);
+  	
+  	tft.setCursor(20, 80);
+	tft.println("PREV");
+
+	tft.setCursor(100, 80);
+	tft.println("NEXT");
 	
+	tft.setCursor(180, 80);
+	tft.println("PLAY");
 
+	tft.setCursor(260, 80);
+	tft.println("VOL UP");
 
-	tft.setCursor(0, 130);
-	tft.setTextSize(2);
-	tft.setTextColor(ILI9341_GREEN);
-	tft.println("Judas Priest - Screaming for vengeance");
+	tft.setCursor(260, 215);
+	tft.println("VOL DOWN");
 
-  
+	tft.setCursor(180, 215);
+	tft.println("MUTE");
+
+	analogWrite(lite, 50);
+
 }
 unsigned long lastTime = 0;
 int lastButton = 0;
+
+//vars for mem keeping
+
+int cpuStringStart, cpuStringLimit, cpuDivisor;
+String cpuString, cpuTemp, cpuUsage;
+
+int gpuStringStart, gpuStringLimit, gpuDivisor;
+String gpuString, gpuTemp, gpuUsage;
+
+int songStringStart, songStringLimit;
+String songString, currentSong;
+
 void loop()
 {
   // Retrieve a point  
   TSPoint p = ts.getPoint();
+  serialEvent();
+  antiBurn(millis());
+
+   if (stringComplete) {
+    	Serial.println(inputString);
+		tft.setTextSize(2);
+		tft.setTextColor(ILI9341_DARKGREEN);
+
+		tft.fillRect(0, 35, 70, 40, ILI9341_BLACK);
+		tft.setCursor(10,35);
+		cpuStringStart = inputString.indexOf("C");
+		cpuStringLimit = inputString.indexOf("|");
+		cpuString = inputString.substring(cpuStringStart+1, cpuStringLimit);
+		cpuDivisor = cpuString.indexOf(" ");
+		cpuTemp =  cpuString.substring(0, cpuDivisor);
+		cpuUsage = cpuString.substring(cpuDivisor + 1);
+		tft.println(cpuTemp);
+		tft.setCursor(10, 55);
+		tft.println(cpuUsage);
+		
+		tft.fillRect(90, 35, 70, 40, ILI9341_BLACK);
+		tft.setCursor(90,35);
+		tft.setTextColor(ILI9341_ORANGE);
+		gpuStringStart = inputString.indexOf("G", cpuStringLimit);
+		gpuStringLimit = inputString.indexOf("|", gpuStringStart);
+		gpuString = inputString.substring(gpuStringStart+1 ,gpuStringLimit);
+		gpuDivisor = gpuString.indexOf(" ");
+		gpuTemp =  gpuString.substring(0, gpuDivisor);
+		gpuUsage = gpuString.substring(gpuDivisor + 1);
+		tft.println(gpuTemp);
+		tft.setCursor(90, 55);
+		tft.println(gpuUsage);
+
+		
+		tft.fillRect(170, 35, 70, 40, ILI9341_BLACK);
+		tft.setCursor(170,35);
+		tft.setTextColor(ILI9341_DARKCYAN);
+		int ramStringStart = inputString.indexOf("R", gpuStringLimit);
+		int ramStringLimit = inputString.indexOf("|", ramStringStart);
+		String ramString = inputString.substring(ramStringStart+1 ,ramStringLimit);
+		int ramDivisor = ramString.indexOf(" ");
+		String ramTotal =  ramString.substring(0, ramDivisor);
+		String ramUsage = ramString.substring(ramDivisor + 1);
+		tft.println(ramString);
+		
+		
+		songStringStart = inputString.indexOf("S", ramStringLimit);
+		songStringLimit = inputString.indexOf("|", songStringStart);
+		songString = inputString.substring(songStringStart+1, songStringLimit);
+
+		if ( songString != currentSong ){
+			tft.fillRect(0, 130, 320, 80, ILI9341_BLACK);
+			tft.setTextSize(2);
+			tft.setCursor(0,130);
+			tft.setTextColor(ILI9341_MAGENTA);
+			tft.println(songString);
+			currentSong = songString;
+		};
+		
+		
+		inputString = "";
+		stringComplete = false;
+	}
+
+
   
  /*
   Serial.print("X = "); Serial.print(p.x);
@@ -107,29 +217,28 @@ void loop()
   
   if ( ( millis() - lastTime ) > 100 ){
   	lastTime = millis();
-  	
   	if ( p.x < 120 ){
   		if ( p.y < 57 ){
-  			Consumer.write(MEDIA_VOLUME_MUTE);
+  			Consumer.write(MEDIA_VOLUME_UP);
   			lastButton = 4;
   		} else if ( p.y > 57 && p.y < 114 ) {
-  			Consumer.write(MEDIA_VOLUME_DOWN);
+  			Consumer.write(MEDIA_PLAY_PAUSE);
   			lastButton = 5;
   		} else if ( p.y > 114 && p.y < 171 ){
-  			Consumer.write(MEDIA_VOLUME_UP);
+  			Consumer.write(MEDIA_NEXT);
   			lastButton = 6;
   		} else if ( p.y > 171 ){
-
+  			Consumer.write(MEDIA_PREVIOUS);
   		};
   	} else if ( p.x > 120 ) {
   		if ( p.y < 57 ){
-  			Consumer.write(MEDIA_VOLUME_UP);
+  			Consumer.write(MEDIA_VOLUME_DOWN);
   			lastButton = 1;
   		} else if ( p.y > 57 && p.y < 114 ) {
-  			Consumer.write(MEDIA_VOLUME_DOWN);
+  			Consumer.write(MEDIA_VOLUME_MUTE);
   			lastButton = 2;
   		} else if ( p.y > 114 && p.y < 171 ){
-  			Consumer.write(MEDIA_VOLUME_MUTE);
+  			//Consumer.write(MEDIA_VOLUME_MUTE);
   			lastButton = 3;
   		} else if ( p.y > 171 ){
 
@@ -137,7 +246,26 @@ void loop()
   	};
   };
 
+   
  
+}
+
+void serialEvent() {
+  while (Serial.available()) {
+    char inChar = (char)Serial.read();
+    inputString += inChar;
+    if (inChar == '|') {
+      stringComplete = true;
+    }
+  }
+}
+
+void antiBurn(long millis){
+	if ( (millis - lastTime) > 20000 ){
+		analogWrite(lite, 0);
+	} else {
+		analogWrite(lite, 50);
+	}
 }
 
 // This function opens a Windows Bitmap (BMP) file and
