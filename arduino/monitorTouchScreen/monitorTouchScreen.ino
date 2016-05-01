@@ -1,60 +1,59 @@
-
-#include <Adafruit_GFX.h>    // Core graphics library
+#include <Adafruit_GFX.h>
+#include <Adafruit_NeoPixel.h>
+#include <Adafruit_ILI9341.h>
 #include <SPI.h>
 #include <SD.h>
-#include <Adafruit_ILI9341.h>
 #include "TouchScreen.h"
 #include "HID-Project.h"
-
-// These are the four touchscreen analog pins
-#define YP A2  // must be an analog pin, use "An" notation!
-#define XM A3  // must be an analog pin, use "An" notation!
-#define YM 8  // can be a digital pin
-#define XP 9   // can be a digital pin
-
-// This is calibration data for the raw touch data to the screen coordinates
+#define YP A2
+#define XM A3
+#define YM 8
+#define XP 9
 #define TS_MINX 150
 #define TS_MINY 120
 #define TS_MAXX 920
 #define TS_MAXY 940
-
 #define MINPRESSURE 10
 #define MAXPRESSURE 1000
-
-// The display uses hardware SPI, plus #9 & #10
 #define TFT_CS 10
 #define TFT_DC 9
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 
-
 #define SD_CS 4
 
-
-// For better pressure precision, we need to know the resistance
-// between X+ and X- Use any multimeter to read it
-// For the one we're using, its 300 ohms across the X plate
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
-
-//Serial Vars
-// vars for serial input
 String inputString = "";
 boolean stringComplete = false;
 int lite = 11;
 int reset = 13;
 
+int ledLength = 8;
+int traySwitch = A1;
+int lightStatus = 0;
+int trayClosed = 0;
+int trayStatus = 0;
+
+#define PIN 5
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(60, PIN, NEO_GRB + NEO_KHZ800);
 
 void setup(void) {
+
+
+	strip.begin();
+	strip.setBrightness(64);
+  	strip.show(); 
+  	turnLeds();
+  	delay(5000);
+  	turnLeds();
 
 	pinMode(lite, OUTPUT);
 	pinMode(reset, OUTPUT);
 	digitalWrite(reset, LOW);
 	delay(1000);
 	Serial.begin(9600);
-
-
-	//Reserve buffer for serial
-  	inputString.reserve(200);
+	
+	inputString.reserve(200);
 	
 	tft.begin();
 	tft.fillScreen(ILI9341_BLACK);
@@ -63,23 +62,19 @@ void setup(void) {
 	if (!SD.begin(SD_CS)) {
 		Serial.println("failed!");
 	};
-	Serial.println("OK!");
-    Serial.println(digitalRead(reset));
-	tft.setRotation(3);
+
+    tft.setRotation(3);
 	
-	//tft.drawRect(0, 0, 79, 119, ILI9341_DARKGREEN);
 	tft.setCursor(10, 10);
   	tft.setTextColor(ILI9341_DARKGREEN);  
   	tft.setTextSize(3);
   	tft.println("CPU");
 
-  	//tft.drawRect(80, 0, 79, 119, ILI9341_ORANGE);
   	tft.setCursor(90, 10);
   	tft.setTextColor(ILI9341_ORANGE);
   	tft.setTextSize(3);
   	tft.println("GPU");
 
-  	//tft.drawRect(160, 0, 79, 119, ILI9341_DARKCYAN);
   	tft.setCursor(170, 10);
   	tft.setTextColor(ILI9341_DARKCYAN);
   	tft.setTextSize(3);
@@ -106,11 +101,14 @@ void setup(void) {
 	tft.setCursor(180, 215);
 	tft.println("MUTE");
 
+	tft.setCursor(20, 215);
+	tft.println("LIGHTS");
+
+
 	analogWrite(lite, 50);
 
 }
 unsigned long lastTime = 0;
-int lastButton = 0;
 
 //vars for mem keeping
 
@@ -125,12 +123,14 @@ String songString, currentSong;
 
 void loop()
 {
-  // Retrieve a point  
-  TSPoint p = ts.getPoint();
-  serialEvent();
-  antiBurn(millis());
+	
+  	TSPoint p = ts.getPoint();
+ 	serialEvent();
+  	antiBurn(millis());
 
-   if (stringComplete) {
+
+
+   	if (stringComplete) {
     	Serial.println(inputString);
 		tft.setTextSize(2);
 		tft.setTextColor(ILI9341_DARKGREEN);
@@ -190,65 +190,45 @@ void loop()
 		inputString = "";
 		stringComplete = false;
 	}
-
-
-  
- /*
-  Serial.print("X = "); Serial.print(p.x);
-  Serial.print("\tY = "); Serial.print(p.y);
-  Serial.print("\tPressure = "); Serial.println(p.z);  
- */
-  
-  // we have some minimum pressure we consider 'valid'
-  // pressure of 0 means no pressing!
-  if (p.z < MINPRESSURE || p.z > MAXPRESSURE) {
-    return;
-  }
+  	if (p.z < MINPRESSURE || p.z > MAXPRESSURE) {
+    	return;
+  	}
 
   
-  // Scale from ~0->1000 to tft.width using the calibration #'s
-  p.x = map(p.x, TS_MINX, TS_MAXX, 0, tft.width());
-  p.y = map(p.y, TS_MINY, TS_MAXY, 0, tft.height());
+  	// Scale from ~0->1000 to tft.width using the calibration #'s
+	p.x = map(p.x, TS_MINX, TS_MAXX, 0, tft.width());
+	p.y = map(p.y, TS_MINY, TS_MAXY, 0, tft.height());
 
   
-  Serial.print("("); Serial.print(p.x);
+  /*Serial.print("("); Serial.print(p.x);
   Serial.print(", "); Serial.print(p.y);
-  Serial.println(")");
+  Serial.println(")");*/
   
-  if ( ( millis() - lastTime ) > 100 ){
-  	lastTime = millis();
-  	if ( p.x < 120 ){
-  		if ( p.y < 57 ){
-  			Consumer.write(MEDIA_VOLUME_UP);
-  			lastButton = 4;
-  		} else if ( p.y > 57 && p.y < 114 ) {
-  			Consumer.write(MEDIA_PLAY_PAUSE);
-  			lastButton = 5;
-  		} else if ( p.y > 114 && p.y < 171 ){
-  			Consumer.write(MEDIA_NEXT);
-  			lastButton = 6;
-  		} else if ( p.y > 171 ){
-  			Consumer.write(MEDIA_PREVIOUS);
-  		};
-  	} else if ( p.x > 120 ) {
-  		if ( p.y < 57 ){
-  			Consumer.write(MEDIA_VOLUME_DOWN);
-  			lastButton = 1;
-  		} else if ( p.y > 57 && p.y < 114 ) {
-  			Consumer.write(MEDIA_VOLUME_MUTE);
-  			lastButton = 2;
-  		} else if ( p.y > 114 && p.y < 171 ){
-  			//Consumer.write(MEDIA_VOLUME_MUTE);
-  			lastButton = 3;
-  		} else if ( p.y > 171 ){
-
-  		};
-  	};
-  };
-
-   
- 
-}
+	if ( ( millis() - lastTime ) > 500 ){
+	  	lastTime = millis();
+	  	if ( p.x < 120 ){
+	  		if ( p.y < 57 ){
+	  			Consumer.write(MEDIA_VOLUME_UP);
+	  		} else if ( p.y > 57 && p.y < 114 ) {
+	  			Consumer.write(MEDIA_PLAY_PAUSE);
+	  		} else if ( p.y > 114 && p.y < 171 ){
+	  			Consumer.write(MEDIA_NEXT);
+	  		} else if ( p.y > 171 ){
+	  			Consumer.write(MEDIA_PREVIOUS);
+	  		};
+	  	} else if ( p.x > 120 ) {
+	  		if ( p.y < 57 ){
+	  			Consumer.write(MEDIA_VOLUME_DOWN);
+	  		} else if ( p.y > 57 && p.y < 114 ) {
+	  			Consumer.write(MEDIA_VOLUME_MUTE);
+	  		} else if ( p.y > 114 && p.y < 171 ){
+	  			//Consumer.write(MEDIA_VOLUME_MUTE);
+	  		} else if ( p.y > 171 ){
+	  			turnLeds();
+	  		};
+	  	};
+	};
+};
 
 void serialEvent() {
   while (Serial.available()) {
@@ -261,11 +241,29 @@ void serialEvent() {
 }
 
 void antiBurn(long millis){
-	if ( (millis - lastTime) > 20000 ){
+	if ( (millis - lastTime) > 100000 ){
 		analogWrite(lite, 0);
 	} else {
 		analogWrite(lite, 50);
 	}
+}
+
+void turnLeds(){
+	int ledColor1 = 0;
+	int ledColor2 = 0;
+	int ledColor3 = 0;
+	if ( lightStatus == 0 ){
+		ledColor1 = 255;
+		ledColor3 = 255;
+		lightStatus = 1;
+	} else {
+		lightStatus = 0;
+	};
+	for (int i = 0; i < ledLength; ++i)
+	{
+		strip.setPixelColor(i, ledColor1, ledColor2, ledColor3);
+	};
+	strip.show(); 
 }
 
 // This function opens a Windows Bitmap (BMP) file and
